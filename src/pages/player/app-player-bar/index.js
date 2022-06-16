@@ -1,8 +1,16 @@
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector, shallowEqual } from 'react-redux';
 
 import { getSizeImage, formatDate, getPlaySong } from '@/utils/format-utils';
+import { 
+  getSongDetailAction,
+  changeSequenceAction,
+  changeCurrentIndexAndSongAction,
+  changeCurrentLyricIndexAction 
+} from '../store/actionCreators';
 
+import { message } from 'antd';
+import { NavLink } from 'react-router-dom';
 import { Slider } from 'antd';
 import {
   PlaybarWrapper,
@@ -10,8 +18,6 @@ import {
   PlayInfo,
   Operator
 } from './style';
-import { getSongDetailAction } from '../store/actionCreators';
-import { useCallback } from 'react';
 
 export default memo(function HYAppPlayerBar() {
   // props and state
@@ -21,8 +27,16 @@ export default memo(function HYAppPlayerBar() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   // redux hook
-  const { currentSong } = useSelector(state => ({
-    currentSong: state.getIn(["player", "currentSong"])
+  const { 
+    currentSong, 
+    sequence, 
+    lyricList,
+    currentLyricIndex
+  } = useSelector(state => ({
+    currentSong: state.getIn(["player", "currentSong"]),
+    sequence: state.getIn(["player", "sequence"]),
+    lyricList: state.getIn(["player", "lyricList"]),
+    currentLyricIndex: state.getIn(["player", "currentLyricIndex"])
   }), shallowEqual);
   const dispatch = useDispatch();
 
@@ -31,8 +45,14 @@ export default memo(function HYAppPlayerBar() {
   useEffect(() => {
     dispatch(getSongDetailAction(167876));
   }, [dispatch]);
+
   useEffect(() =>  {
     audioRef.current.src = getPlaySong(currentSong.id);
+    audioRef.current.play().then(res => {
+      setIsPlaying(true);
+    }).catch(err => {
+      setIsPlaying(false);
+    });
   }, [currentSong]);
 
   // other handle
@@ -43,15 +63,57 @@ export default memo(function HYAppPlayerBar() {
   const showCurrentTime = formatDate(currentTime, "mm:ss");
 
   // handle function
-  const playMusic = () => {
+  const playMusic = useCallback(() => {
     isPlaying ? audioRef.current.pause(): audioRef.current.play();
     setIsPlaying(!isPlaying);
-  }
+  }, [isPlaying]);
 
   const timeUpdate = (e) => {
+    const currentTime = e.target.currentTime;
     if (!isChanging) {
-      setCurrentTime(e.target.currentTime * 1000);
-      setProgress(currentTime / duration * 100);
+      setCurrentTime(currentTime * 1000);
+      setProgress(currentTime * 1000 / duration * 100);
+    }
+
+    // 获取当前的歌词
+    let i = 0;
+    for (; i < lyricList.length; i++) {
+      let lyricItem = lyricList[i];
+      if (currentTime * 1000 < lyricItem.time) {
+        break;
+      }
+    }
+
+    if (currentLyricIndex !== i - 1) {
+      dispatch(changeCurrentLyricIndexAction(i - 1));
+      const content = lyricList[i - 1] && lyricList[i - 1].content
+      message.open({
+        key: "lyric",
+        content: content,
+        duration: 0,
+        className: "lyric-class"
+      })
+    }
+  }
+
+  const changeSequence = () => {
+    let currentSequence = sequence + 1;
+    if (currentSequence > 2) {
+      currentSequence = 0;
+    }
+    dispatch(changeSequenceAction(currentSequence));
+  }
+
+  const changeMusic = (tag) => {
+    dispatch(changeCurrentIndexAndSongAction(tag));
+  }
+
+  const handleMusicEnded = () => {
+    if (sequence === 2) { // 单曲循环
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
+    } else {
+      dispatch(changeCurrentIndexAndSongAction(1));
     }
   }
 
@@ -73,20 +135,22 @@ export default memo(function HYAppPlayerBar() {
     }
   }, [duration, isPlaying, playMusic]);
 
-
   return (
     <PlaybarWrapper className="sprite_player">
       <div className="content wrap-v2">
         <Control isPlaying={isPlaying}>
-          <button className="sprite_player prev"></button>
-          <button className="sprite_player play" onClick={e => playMusic()}></button>
-          <button className="sprite_player next"></button>
+          <button className="sprite_player prev"
+                  onClick={e => changeMusic(-1)}></button>
+          <button className="sprite_player play" 
+                  onClick={e => playMusic()}></button>
+          <button className="sprite_player next"
+                  onClick={e => changeMusic(1)}></button>
         </Control>
         <PlayInfo>
           <div className="image">
-            <a href="/#">
+            <NavLink to="/discover/player">
               <img src={getSizeImage(picUrl, 35)} alt="" />
-            </a>
+            </NavLink>
           </div>
           <div className="info">
             <div className="song">
@@ -106,19 +170,21 @@ export default memo(function HYAppPlayerBar() {
             </div>
           </div>
         </PlayInfo>
-        <Operator>
+        <Operator sequence={sequence}>
           <div className="left">
             <button className="sprite_player btn favor"></button>
             <button className="sprite_player btn share"></button>
           </div>
           <div className="right sprite_player">
             <button className="sprite_player btn volume"></button>
-            <button className="sprite_player btn loop"></button>
+            <button className="sprite_player btn loop" onClick={e => changeSequence()}></button>
             <button className="sprite_player btn playlist"></button>
           </div>
         </Operator>
       </div>
-      <audio ref={audioRef} onTimeUpdate={timeUpdate} />
+      <audio ref={audioRef} 
+             onTimeUpdate={e => timeUpdate(e)} 
+             onEnded={e => handleMusicEnded()}/>
     </PlaybarWrapper>
   )
 });

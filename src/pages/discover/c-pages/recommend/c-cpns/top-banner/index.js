@@ -27,8 +27,11 @@ export default memo(function HYTopBanner() {
   useEffect(() => {
     dispatch(getTopBannerAction());
   }, [dispatch]);
+
   const bannerChange = useCallback((from, to) => {
-    setCurrentIndex(to);
+    setTimeout(() => {
+      setCurrentIndex(to);
+    }, 0);
   }, []);
 
   // 其他业务逻辑
